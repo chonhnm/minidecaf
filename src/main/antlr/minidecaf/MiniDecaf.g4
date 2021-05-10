@@ -1,6 +1,6 @@
 grammar MiniDecaf;
 
-prog : func;
+prog : func EOF;
 
 func : type funcName Lparen Rparen Lbrace stat Rbrace;
 
