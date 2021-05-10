@@ -7,12 +7,27 @@ func : type ident=Identity Lparen Rparen Lbrace stat Rbrace;
 stat : Return expr Semicolon;
 
 expr
+    : additive
+    ;
+
+additive
+    : multiplicative
+    | additive op=('+' | '-') multiplicative
+    ;
+
+multiplicative
     : unary
+    | multiplicative op=('*' | '/' | '%') unary
     ;
 
 unary
-    : Integer
+    : primary
     | op=('-' | '!' | '~') unary
+    ;
+
+primary
+    : Integer
+    | '(' expr ')'
     ;
 
 type : Int;
@@ -26,7 +41,7 @@ Rbrace : '}';
 Return : 'return';
 Identity : Alphabet AlphaNum*;
 Semicolon : ';';
-Integer : [+-]?[0-9]+;
+Integer : [0-9]+;
 
 fragment Alphabet : [a-zA-Z];
 fragment AlphaNum : [a-zA-Z0-9];

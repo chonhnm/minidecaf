@@ -1,15 +1,18 @@
 package minidecaf;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Stack;
 
 public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
 
     private final StringBuilder sb;
-    private final Stack<Integer> stack;
+    private final List<String> opList;
+//    private final Stack<String> opStack;
 
     public MainVisitor(StringBuilder sb) {
         this.sb = sb;
-        stack = new Stack<>();
+        opList = new ArrayList<>();
     }
 
     @Override
@@ -24,22 +27,111 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
         if (!"main".equals(text)) {
             throw new RuntimeException("function name is not main.");
         }
-        sb.append("main:\r\n");
+        sb.append(text).append(":\r\n");
         return super.visitFunc(ctx);
     }
 
     @Override
     public Object visitStat(MiniDecafParser.StatContext ctx) {
         visit(ctx.expr());
-        sb.append("\tret");
+        opList.add("ret");
+        transIR();
         return null;
+    }
+
+    private void transIR() {
+        int rVal;
+        int lVal;
+        Integer result = 0;
+        Stack<Integer> temp = new Stack<>();
+        for (String opStr : opList) {
+            String[] split = opStr.split(" ");
+            String op = split[0];
+            switch (op) {
+                case "neg":
+                    lVal = temp.pop();
+                    temp.push(-lVal);
+                    break;
+                case "not":
+                    lVal = temp.pop();
+                    temp.push(~lVal);
+                    break;
+                case "lnot":
+                    lVal = temp.pop();
+                    lVal = lVal == 0 ? 1 : 0;
+                    temp.push(lVal);
+                    break;
+                case "add":
+                    rVal = temp.pop();
+                    lVal = temp.pop();
+                    temp.push(lVal + rVal);
+                    break;
+                case "sub":
+                    rVal = temp.pop();
+                    lVal = temp.pop();
+                    temp.push(lVal - rVal);
+                    break;
+                case "mul":
+                    rVal = temp.pop();
+                    lVal = temp.pop();
+                    temp.push(lVal * rVal);
+                    break;
+                case "dev":
+                    rVal = temp.pop();
+                    lVal = temp.pop();
+                    temp.push(lVal / rVal);
+                    break;
+                case "rem":
+                    rVal = temp.pop();
+                    lVal = temp.pop();
+                    temp.push(lVal % rVal);
+                    break;
+                case "push" :
+                    String val = split[1];
+                    temp.push(Integer.valueOf(val));
+                    break;
+                case "ret":
+                    result = temp.pop();
+                    break;
+            }
+        }
+        sb.append("\tli\ta0,").append(result).append("\r\n\tret");
     }
 
     @Override
     public Object visitExpr(MiniDecafParser.ExprContext ctx) {
         super.visitExpr(ctx);
-        Integer val = stack.pop();
-        sb.append("\tli\ta0,").append(val).append("\r\n");
+        return null;
+    }
+
+    @Override
+    public Object visitAdditive(MiniDecafParser.AdditiveContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.additive());
+            visit(ctx.multiplicative());
+            String opText = ctx.op.getText();
+            opText = "+".equals(opText) ? "add" : "sub";
+            opList.add(opText);
+        } else {
+            visit(ctx.multiplicative());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitMultiplicative(MiniDecafParser.MultiplicativeContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.multiplicative());
+            visit(ctx.unary());
+            String opText = ctx.op.getText();
+            opText = "*".equals(opText) ? "mul" :
+                    "/".equals(opText) ? "div" : "rem";
+            opList.add(opText);
+        } else {
+            visit(ctx.unary());
+        }
         return null;
     }
 
@@ -49,21 +141,22 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
         if (childCount > 1) {
             visit(ctx.unary());
             String opText = ctx.op.getText();
-            Integer val = stack.pop();
-            switch (opText) {
-                case "-" :
-                    val = -val;
-                    break;
-                case "!":
-                    val = val == 0 ? 1 : 0;
-                    break;
-                case "~":
-                    val = ~val;
-                    break;
-            }
-            stack.push(val);
+            opText = "-".equals(opText) ? "neg" :
+                    "~".equals(opText) ? "not" : "lnot";
+            opList.add(opText);
         } else {
-            stack.push(Integer.valueOf(ctx.getText()));
+            visit(ctx.primary());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitPrimary(MiniDecafParser.PrimaryContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.expr());
+        } else {
+            opList.add("push " + ctx.getText());
         }
         return null;
     }
