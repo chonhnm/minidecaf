@@ -1,17 +1,21 @@
 grammar MiniDecaf;
 
-prog : func;
+prog : func EOF;
 
-func : type funcName Lparen Rparen Lbrace stat Rbrace;
-
-funcName : Identity;
+func : type ident=Identity Lparen Rparen Lbrace stat Rbrace;
 
 stat : Return expr Semicolon;
 
-expr : Integer;
+expr
+    : unary
+    ;
+
+unary
+    : Integer
+    | op=('-' | '!' | '~') unary
+    ;
 
 type : Int;
-
 
 // lexer
 Int : 'int';
