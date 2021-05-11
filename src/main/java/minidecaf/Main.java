@@ -35,11 +35,14 @@ public class Main {
         parser.setErrorHandler(new BailErrorStrategy());
 
         ParseTree tree = parser.prog();
-        MainVisitor visitor = new MainVisitor(oriStr);
+        StringBuilder sb = new StringBuilder();
+        MainVisitor visitor = new MainVisitor(sb);
         visitor.visit(tree);
         
         FileWriter writer = new FileWriter(args[1]);
-        writer.write(visitor.getResult());
+        String result = sb.toString();
+        writer.write(result);
         writer.close();
+        System.out.println(result);
     }
 }

@@ -1,40 +1,301 @@
 package minidecaf;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
 
-    private final String oriStr;
-    private String resultStr;
+    private final StringBuilder sb;
+    private final List<String> opList;
 
-    public MainVisitor(String input) {
-        this.oriStr = input;
-        resultStr = "\t.text\n\t.globl\tmain\nmain:\n\tli\ta0,X\n\tret\n";
-    }
-
-    public String getResult() {
-        return resultStr;
-    }
-
-    public String getOriStr() {
-        return oriStr;
+    public MainVisitor(StringBuilder sb) {
+        this.sb = sb;
+        opList = new ArrayList<>();
     }
 
     @Override
-    public Object visitFuncName(MiniDecafParser.FuncNameContext ctx) {
-        String text = ctx.getText();
+    public Object visitProg(MiniDecafParser.ProgContext ctx) {
+        sb.append("\t.text\n\t.globl\tmain\n");
+        super.visitProg(ctx);
+        transIR();
+        return null;
+    }
+
+    @Override
+    public Object visitFunc(MiniDecafParser.FuncContext ctx) {
+        String text = ctx.ident.getText();
         if (!"main".equals(text)) {
             throw new RuntimeException("function name is not main.");
         }
-        return super.visitFuncName(ctx);
+        sb.append(text).append(":\n");
+        return super.visitFunc(ctx);
+    }
+
+    @Override
+    public Object visitStat(MiniDecafParser.StatContext ctx) {
+        visit(ctx.expr());
+        opList.add("ret");
+        return null;
     }
 
     @Override
     public Object visitExpr(MiniDecafParser.ExprContext ctx) {
-        String text = ctx.getText();
-        int integer = Integer.parseInt(text);
-        if (integer < 0) {
-            throw new RuntimeException("do not support negative number.");
+        super.visitExpr(ctx);
+        return null;
+    }
+
+    @Override
+    public Object visitLogical_or(MiniDecafParser.Logical_orContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.logical_or());
+            visit(ctx.logical_and());
+            opList.add("lor");
+        } else {
+            visit(ctx.logical_and());
         }
-        resultStr = resultStr.replace("X", text);
-        return super.visitExpr(ctx);
+        return null;
+    }
+
+    @Override
+    public Object visitLogical_and(MiniDecafParser.Logical_andContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.logical_and());
+            visit(ctx.equality());
+            opList.add("land");
+        } else {
+            visit(ctx.equality());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitEquality(MiniDecafParser.EqualityContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.equality());
+            visit(ctx.relational());
+            String opText = ctx.op.getText();
+            opText = "==".equals(opText) ? "eq" : "ne";
+            opList.add(opText);
+        } else {
+            visit(ctx.relational());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitRelational(MiniDecafParser.RelationalContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.relational());
+            visit(ctx.additive());
+            String opText = ctx.op.getText();
+            opText = "<".equals(opText) ? "lt"
+                    : ">".equals(opText) ? "gt"
+                    : "<=".equals(opText) ? "le"
+                    : "ge";
+            opList.add(opText);
+        } else {
+            visit(ctx.additive());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitAdditive(MiniDecafParser.AdditiveContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.additive());
+            visit(ctx.multiplicative());
+            String opText = ctx.op.getText();
+            opText = "+".equals(opText) ? "add" : "sub";
+            opList.add(opText);
+        } else {
+            visit(ctx.multiplicative());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitMultiplicative(MiniDecafParser.MultiplicativeContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.multiplicative());
+            visit(ctx.unary());
+            String opText = ctx.op.getText();
+            opText = "*".equals(opText) ? "mul" :
+                    "/".equals(opText) ? "div" : "rem";
+            opList.add(opText);
+        } else {
+            visit(ctx.unary());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitUnary(MiniDecafParser.UnaryContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.unary());
+            String opText = ctx.op.getText();
+            opText = "-".equals(opText) ? "neg" :
+                    "~".equals(opText) ? "not" : "lnot";
+            opList.add(opText);
+        } else {
+            visit(ctx.primary());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitPrimary(MiniDecafParser.PrimaryContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.expr());
+        } else {
+            String text = ctx.getText();
+            opList.add("push " + Integer.parseInt(text));
+        }
+        return null;
+    }
+
+    private void transIR() {
+        for (String opStr : opList) {
+            String[] split = opStr.split(" ");
+            String op = split[0];
+            switch (op) {
+                case "lor":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tor t0,t0,t1\n")
+                            .append("\tsnez t0,t0\n");
+                    push("t0");
+                    break;
+                case "land":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tsnez t0,t0\n")
+                            .append("\tsnez t1,t1\n")
+                            .append("\tand t0,t0,t1\n");
+                    push("t0");
+                    break;
+                case "eq":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tsub t0,t0,t1\n")
+                            .append("\tseqz t0,t0\n");
+                    push("t0");
+                    break;
+                case "ne":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tsub t0,t0,t1\n")
+                            .append("\tsnez t0,t0\n");
+                    push("t0");
+                    break;
+                case "le":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tsgt t0,t0,t1\n")
+                            .append("\txori t0,t0,1\n");
+                    push("t0");
+                    break;
+                case "ge":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tslt t0,t0,t1\n")
+                            .append("\txori t0,t0,1\n");
+                    push("t0");
+                    break;
+                case "lt":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tslt t0,t0,t1\n");
+                    push("t0");
+                    break;
+                case "gt":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tsgt t0,t0,t1\n");
+                    push("t0");
+                    break;
+                case "neg":
+                    pop("t0");
+                    sb.append("\tneg t0,t0\n");
+                    push("t0");
+                    break;
+                case "not":
+                    pop("t0");
+                    sb.append("\tnot t0,t0\n");
+                    push("t0");
+                    break;
+                case "lnot":
+                    pop("t0");
+                    sb.append("\tseqz t0,t0\n");
+                    push("t0");
+                    break;
+                case "add":
+                    pop("t1"); // rvalue
+                    pop("t0"); // lvalue
+                    sb.append("\tadd t0,t0,t1\n");
+                    push("t0");
+                    break;
+                case "sub":
+                    pop("t1"); // rvalue
+                    pop("t0"); // lvalue
+                    sb.append("\tsub t0,t0,t1\n");
+                    push("t0");
+                    break;
+                case "mul":
+                    pop("t1"); // rvalue
+                    pop("t0"); // lvalue
+                    sb.append("\tmul t0,t0,t1\n");
+                    push("t0");
+                    break;
+                case "div":
+                    pop("t1"); // rvalue
+                    pop("t0"); // lvalue
+                    sb.append("\tdiv t0,t0,t1\n");
+                    push("t0");
+                    break;
+                case "rem":
+                    pop("t1"); // rvalue
+                    pop("t0"); // lvalue
+                    sb.append("\trem t0,t0,t1\n");
+                    push("t0");
+                    break;
+                case "push":
+                    String val = split[1];
+                    sb.append("\tli t0," + val + "\n");
+                    push("t0");
+                    break;
+                case "ret":
+                    pop("a0");
+                    sb.append("\tret\n");
+                    break;
+            }
+        }
+    }
+
+    /**
+     * push register to stack
+     *
+     * @param reg register need to push
+     */
+    private void push(String reg) {
+        sb.append("\taddi sp,sp,4\n")
+                .append("\tsw " + reg + ", 0(sp)\n");
+    }
+
+    /**
+     * pop stack value to register
+     *
+     * @param reg register pop to
+     */
+    private void pop(String reg) {
+        sb.append("\tlw " + reg + ", 0(sp)\n")
+                .append("\taddi sp,sp,-4\n");
     }
 }
