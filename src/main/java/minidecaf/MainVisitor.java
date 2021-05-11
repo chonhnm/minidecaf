@@ -76,7 +76,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
                     lVal = temp.pop();
                     temp.push(lVal * rVal);
                     break;
-                case "dev":
+                case "div":
                     rVal = temp.pop();
                     lVal = temp.pop();
                     temp.push(lVal / rVal);
