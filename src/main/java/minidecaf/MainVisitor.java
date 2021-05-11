@@ -2,13 +2,11 @@ package minidecaf;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Stack;
 
 public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
 
     private final StringBuilder sb;
     private final List<String> opList;
-//    private final Stack<String> opStack;
 
     public MainVisitor(StringBuilder sb) {
         this.sb = sb;
@@ -18,7 +16,9 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
     @Override
     public Object visitProg(MiniDecafParser.ProgContext ctx) {
         sb.append("\t.text\n\t.globl\tmain\n");
-        return super.visitProg(ctx);
+        super.visitProg(ctx);
+        transIR();
+        return null;
     }
 
     @Override
@@ -35,19 +35,192 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
     public Object visitStat(MiniDecafParser.StatContext ctx) {
         visit(ctx.expr());
         opList.add("ret");
-        transIR();
+        return null;
+    }
+
+    @Override
+    public Object visitExpr(MiniDecafParser.ExprContext ctx) {
+        super.visitExpr(ctx);
+        return null;
+    }
+
+    @Override
+    public Object visitLogical_or(MiniDecafParser.Logical_orContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.logical_or());
+            visit(ctx.logical_and());
+            opList.add("lor");
+        } else {
+            visit(ctx.logical_and());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitLogical_and(MiniDecafParser.Logical_andContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.logical_and());
+            visit(ctx.equality());
+            opList.add("land");
+        } else {
+            visit(ctx.equality());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitEquality(MiniDecafParser.EqualityContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.equality());
+            visit(ctx.relational());
+            String opText = ctx.op.getText();
+            opText = "==".equals(opText) ? "eq" : "ne";
+            opList.add(opText);
+        } else {
+            visit(ctx.relational());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitRelational(MiniDecafParser.RelationalContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.relational());
+            visit(ctx.additive());
+            String opText = ctx.op.getText();
+            opText = "<".equals(opText) ? "lt"
+                    : ">".equals(opText) ? "gt"
+                    : "<=".equals(opText) ? "le"
+                    : "ge";
+            opList.add(opText);
+        } else {
+            visit(ctx.additive());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitAdditive(MiniDecafParser.AdditiveContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.additive());
+            visit(ctx.multiplicative());
+            String opText = ctx.op.getText();
+            opText = "+".equals(opText) ? "add" : "sub";
+            opList.add(opText);
+        } else {
+            visit(ctx.multiplicative());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitMultiplicative(MiniDecafParser.MultiplicativeContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.multiplicative());
+            visit(ctx.unary());
+            String opText = ctx.op.getText();
+            opText = "*".equals(opText) ? "mul" :
+                    "/".equals(opText) ? "div" : "rem";
+            opList.add(opText);
+        } else {
+            visit(ctx.unary());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitUnary(MiniDecafParser.UnaryContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.unary());
+            String opText = ctx.op.getText();
+            opText = "-".equals(opText) ? "neg" :
+                    "~".equals(opText) ? "not" : "lnot";
+            opList.add(opText);
+        } else {
+            visit(ctx.primary());
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitPrimary(MiniDecafParser.PrimaryContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.expr());
+        } else {
+            String text = ctx.getText();
+            opList.add("push " + Integer.parseInt(text));
+        }
         return null;
     }
 
     private void transIR() {
-        int rVal;
-        int lVal;
-        Integer result = 0;
-        Stack<Integer> temp = new Stack<>();
         for (String opStr : opList) {
             String[] split = opStr.split(" ");
             String op = split[0];
             switch (op) {
+                case "lor":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tor t0,t0,t1\n")
+                            .append("\tsnez t0,t0\n");
+                    push("t0");
+                    break;
+                case "land":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tsnez t0,t0\n")
+                            .append("\tsnez t1,t1\n")
+                            .append("\tand t0,t0,t1\n");
+                    push("t0");
+                    break;
+                case "eq":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tsub t0,t0,t1\n")
+                            .append("\tseqz t0,t0\n");
+                    push("t0");
+                    break;
+                case "ne":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tsub t0,t0,t1\n")
+                            .append("\tsnez t0,t0\n");
+                    push("t0");
+                    break;
+                case "le":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tsgt t0,t0,t1\n")
+                            .append("\txori t0,t0,1\n");
+                    push("t0");
+                    break;
+                case "ge":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tslt t0,t0,t1\n")
+                            .append("\txori t0,t0,1\n");
+                    push("t0");
+                    break;
+                case "lt":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tslt t0,t0,t1\n");
+                    push("t0");
+                    break;
+                case "gt":
+                    pop("t1");
+                    pop("t0");
+                    sb.append("\tsgt t0,t0,t1\n");
+                    push("t0");
+                    break;
                 case "neg":
                     pop("t0");
                     sb.append("\tneg t0,t0\n");
@@ -118,74 +291,11 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
 
     /**
      * pop stack value to register
+     *
      * @param reg register pop to
      */
     private void pop(String reg) {
         sb.append("\tlw " + reg + ", 0(sp)\n")
                 .append("\taddi sp,sp,-4\n");
-    }
-
-    @Override
-    public Object visitExpr(MiniDecafParser.ExprContext ctx) {
-        super.visitExpr(ctx);
-        return null;
-    }
-
-    @Override
-    public Object visitAdditive(MiniDecafParser.AdditiveContext ctx) {
-        int childCount = ctx.getChildCount();
-        if (childCount > 1) {
-            visit(ctx.additive());
-            visit(ctx.multiplicative());
-            String opText = ctx.op.getText();
-            opText = "+".equals(opText) ? "add" : "sub";
-            opList.add(opText);
-        } else {
-            visit(ctx.multiplicative());
-        }
-        return null;
-    }
-
-    @Override
-    public Object visitMultiplicative(MiniDecafParser.MultiplicativeContext ctx) {
-        int childCount = ctx.getChildCount();
-        if (childCount > 1) {
-            visit(ctx.multiplicative());
-            visit(ctx.unary());
-            String opText = ctx.op.getText();
-            opText = "*".equals(opText) ? "mul" :
-                    "/".equals(opText) ? "div" : "rem";
-            opList.add(opText);
-        } else {
-            visit(ctx.unary());
-        }
-        return null;
-    }
-
-    @Override
-    public Object visitUnary(MiniDecafParser.UnaryContext ctx) {
-        int childCount = ctx.getChildCount();
-        if (childCount > 1) {
-            visit(ctx.unary());
-            String opText = ctx.op.getText();
-            opText = "-".equals(opText) ? "neg" :
-                    "~".equals(opText) ? "not" : "lnot";
-            opList.add(opText);
-        } else {
-            visit(ctx.primary());
-        }
-        return null;
-    }
-
-    @Override
-    public Object visitPrimary(MiniDecafParser.PrimaryContext ctx) {
-        int childCount = ctx.getChildCount();
-        if (childCount > 1) {
-            visit(ctx.expr());
-        } else {
-            String text = ctx.getText();
-            opList.add("push " + Integer.parseInt(text));
-        }
-        return null;
     }
 }

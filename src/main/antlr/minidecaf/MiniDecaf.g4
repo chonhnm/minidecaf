@@ -7,7 +7,27 @@ func : type ident=Identity Lparen Rparen Lbrace stat Rbrace;
 stat : Return expr Semicolon;
 
 expr
+    : logical_or
+    ;
+
+logical_or
+    : logical_and
+    | logical_or '||' logical_and
+    ;
+
+logical_and
+    : equality
+    | logical_and '&&' equality
+    ;
+
+equality
+    : relational
+    | equality op=('==' | '!=') relational
+    ;
+
+relational
     : additive
+    | relational op=('<' | '>' | '<=' | '>=') additive
     ;
 
 additive
