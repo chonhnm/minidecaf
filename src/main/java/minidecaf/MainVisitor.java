@@ -184,8 +184,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             visit(ctx.expr());
         } else {
             String text = ctx.getText();
-            Integer.parseInt(text);
-            opList.add("push " + text);
+            opList.add("push " + Integer.parseInt(text));
         }
         return null;
     }
