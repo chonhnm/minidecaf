@@ -17,7 +17,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
 
     @Override
     public Object visitProg(MiniDecafParser.ProgContext ctx) {
-        sb.append("\t.text\r\n\t.globl\tmain\r\n");
+        sb.append("\t.text\n\t.globl\tmain\n");
         return super.visitProg(ctx);
     }
 
@@ -27,7 +27,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
         if (!"main".equals(text)) {
             throw new RuntimeException("function name is not main.");
         }
-        sb.append(text).append(":\r\n");
+        sb.append(text).append(":\n");
         return super.visitFunc(ctx);
     }
 
@@ -49,53 +49,80 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             String op = split[0];
             switch (op) {
                 case "neg":
-                    lVal = temp.pop();
-                    temp.push(-lVal);
+                    pop("t0");
+                    sb.append("\tneg t0,t0\n");
+                    push("t0");
                     break;
                 case "not":
-                    lVal = temp.pop();
-                    temp.push(~lVal);
+                    pop("t0");
+                    sb.append("\tnot t0,t0\n");
+                    push("t0");
                     break;
                 case "lnot":
-                    lVal = temp.pop();
-                    lVal = lVal == 0 ? 1 : 0;
-                    temp.push(lVal);
+                    pop("t0");
+                    sb.append("\tseqz t0,t0\n");
+                    push("t0");
                     break;
                 case "add":
-                    rVal = temp.pop();
-                    lVal = temp.pop();
-                    temp.push(lVal + rVal);
+                    pop("t1"); // rvalue
+                    pop("t0"); // lvalue
+                    sb.append("\tadd t0,t0,t1\n");
+                    push("t0");
                     break;
                 case "sub":
-                    rVal = temp.pop();
-                    lVal = temp.pop();
-                    temp.push(lVal - rVal);
+                    pop("t1"); // rvalue
+                    pop("t0"); // lvalue
+                    sb.append("\tsub t0,t0,t1\n");
+                    push("t0");
                     break;
                 case "mul":
-                    rVal = temp.pop();
-                    lVal = temp.pop();
-                    temp.push(lVal * rVal);
+                    pop("t1"); // rvalue
+                    pop("t0"); // lvalue
+                    sb.append("\tmul t0,t0,t1\n");
+                    push("t0");
                     break;
                 case "div":
-                    rVal = temp.pop();
-                    lVal = temp.pop();
-                    temp.push(lVal / rVal);
+                    pop("t1"); // rvalue
+                    pop("t0"); // lvalue
+                    sb.append("\tdiv t0,t0,t1\n");
+                    push("t0");
                     break;
                 case "rem":
-                    rVal = temp.pop();
-                    lVal = temp.pop();
-                    temp.push(lVal % rVal);
+                    pop("t1"); // rvalue
+                    pop("t0"); // lvalue
+                    sb.append("\trem t0,t0,t1\n");
+                    push("t0");
                     break;
-                case "push" :
+                case "push":
                     String val = split[1];
-                    temp.push(Integer.valueOf(val));
+                    sb.append("\tli t0," + val + "\n");
+                    push("t0");
                     break;
                 case "ret":
-                    result = temp.pop();
+                    pop("a0");
+                    sb.append("\tret\n");
                     break;
             }
         }
-        sb.append("\tli\ta0,").append(result).append("\r\n\tret");
+    }
+
+    /**
+     * push register to stack
+     *
+     * @param reg register need to push
+     */
+    private void push(String reg) {
+        sb.append("\taddi sp,sp,4\n")
+                .append("\tsw " + reg + ", 0(sp)\n");
+    }
+
+    /**
+     * pop stack value to register
+     * @param reg register pop to
+     */
+    private void pop(String reg) {
+        sb.append("\tlw " + reg + ", 0(sp)\n")
+                .append("\taddi sp,sp,-4\n");
     }
 
     @Override
@@ -156,7 +183,9 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
         if (childCount > 1) {
             visit(ctx.expr());
         } else {
-            opList.add("push " + ctx.getText());
+            String text = ctx.getText();
+            Integer.parseInt(text);
+            opList.add("push " + text);
         }
         return null;
     }
