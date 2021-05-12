@@ -2,12 +2,25 @@ grammar MiniDecaf;
 
 prog : func EOF;
 
-func : type ident=Identity Lparen Rparen Lbrace stat Rbrace;
+func : type ident=Identifier Lparen Rparen Lbrace stat* Rbrace;
 
-stat : Return expr Semicolon;
+stat
+    : Return expr Semicolon #retStat
+    | expr? ';'             #exprStat
+    | declaration           #declStat
+    ;
+
+declaration
+    : type Identifier ('=' expr)? ';'
+    ;
 
 expr
+    : assignment
+    ;
+
+assignment
     : logical_or
+    | Identifier '=' expr
     ;
 
 logical_or
@@ -46,8 +59,9 @@ unary
     ;
 
 primary
-    : Integer
-    | '(' expr ')'
+    : Integer        #priConst
+    | '(' expr ')'   #priExpr
+    | Identifier     #priIdent
     ;
 
 type : Int;
@@ -59,7 +73,7 @@ Rparen : ')';
 Lbrace : '{';
 Rbrace : '}';
 Return : 'return';
-Identity : Alphabet AlphaNum*;
+Identifier : Alphabet AlphaNum*;
 Semicolon : ';';
 Integer : [0-9]+;
 

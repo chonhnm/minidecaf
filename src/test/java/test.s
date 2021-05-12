@@ -1,20 +1,27 @@
 	.text
 	.globl	main
 main:
-	li t0,1
+	addi sp, sp, -12
+	sw ra, 12-4(sp)
+	sw fp, 12-8(sp)
+	addi fp, sp, 12
+	li t1,1
 	addi sp,sp,4
-	sw t0, 0(sp)
-	li t0,0
+	sw t1, 0(sp)
+	li t1,2
 	addi sp,sp,4
-	sw t0, 0(sp)
+	sw t1, 0(sp)
+	lw t2, 0(sp)
+	addi sp,sp,-4
 	lw t1, 0(sp)
 	addi sp,sp,-4
-	lw t0, 0(sp)
-	addi sp,sp,-4
-	or t0,t0,t1
-	snez t0,t0
+	add t1,t1,t2
 	addi sp,sp,4
-	sw t0, 0(sp)
-	lw a0, 0(sp)
-	addi sp,sp,-4
-	ret
+	sw t1, 0(sp)
+	j main_epilogue
+main_epilogue:	lw a0, 0(sp)
+	addi sp, sp, 4
+	lw fp, 12-8(sp)
+	lw ra, 12-4(sp)
+	addi sp, sp, 12
+jr ra
