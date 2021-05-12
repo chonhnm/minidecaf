@@ -232,6 +232,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
         for (String opStr : irList) {
             String[] split = opStr.split(" ");
             String op = split[0];
+            String val;
             switch (op) {
                 case "lor":
                     pop("t2");
@@ -334,9 +335,30 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
                     push("t1");
                     break;
                 case "push":
-                    String val = split[1];
+                    val = split[1];
                     sb.append("\tli t1,").append(val).append("\n");
                     push("t1");
+                    break;
+                case "frameaddr":
+                    val = split[1];
+                    int k = Integer.parseInt(val);
+                    sb.append("\taddi sp, sp, -4\n");
+                    sb.append("\taddi t1, fp, ").append(-12-4*k).append("\n");
+                    sb.append("\tsw t1, 0(sp)\n");
+                    break;
+                case "load":
+                    sb.append("\tlw t1, 0(sp)\n");
+                    sb.append("\tlw t1, 0(t1)\n");
+                    sb.append("\tsw t1, 0(sp)\n");
+                    break;
+                case "store":
+                    sb.append("\tlw t1, 4(sp)\n");
+                    sb.append("\tlw t2, 0(sp)\n");
+                    sb.append("\taddi sp, sp, 4\n");
+                    sb.append("\tsw t1, 0(t2)\n");
+                    break;
+                case "pop":
+                    sb.append("\taddi sp, sp, 4\n");
                     break;
                 case "ret":
                     sb.append("\tj ").append(funcName).append("_epilogue\n");
@@ -349,21 +371,21 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
     private void prologue() {
         int frameSize = 8 + 4 * localVarMap.size();
         sb.append("\taddi sp, sp, ").append(-frameSize).append("\n");
-        sb.append("\tsw ra, ").append(frameSize).append("-4(sp)").append("\n");
-        sb.append("\tsw fp, ").append(frameSize).append("-8(sp)").append("\n");
+        sb.append("\tsw ra, ").append(frameSize-4).append("(sp)").append("\n");
+        sb.append("\tsw fp, ").append(frameSize-8).append("(sp)").append("\n");
         sb.append("\taddi fp, sp, ").append(frameSize).append("\n");
 
     }
 
     private void epilogue(String funcName) {
         int frameSize = 8 + 4 * localVarMap.size();
-        sb.append(funcName).append("_epilogue:");
+        sb.append(funcName).append("_epilogue:\n");
         sb.append("\tlw a0, 0(sp)\n");
         sb.append("\taddi sp, sp, 4\n");
-        sb.append("\tlw fp, ").append(frameSize).append("-8(sp)").append("\n");
-        sb.append("\tlw ra, ").append(frameSize).append("-4(sp)").append("\n");
+        sb.append("\tlw fp, ").append(frameSize-8).append("(sp)").append("\n");
+        sb.append("\tlw ra, ").append(frameSize-4).append("(sp)").append("\n");
         sb.append("\taddi sp, sp, ").append(frameSize).append("\n");
-        sb.append("jr ra");
+        sb.append("\tjr ra\n");
 
     }
 
