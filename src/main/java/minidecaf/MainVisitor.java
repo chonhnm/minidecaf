@@ -54,9 +54,20 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitDeclStat(MiniDecafParser.DeclStatContext ctx) {
+        super.visitDeclStat(ctx);
+        irList.add("pop");
+        return null;
+    }
+
+    @Override
     public Object visitDeclaration(MiniDecafParser.DeclarationContext ctx) {
-        // todo expr may be empty, then no value to store.
-        visit(ctx.expr());
+        MiniDecafParser.ExprContext expr = ctx.expr();
+        if (expr == null) {
+            irList.add("push 0");
+        } else {
+            visit(expr);
+        }
         TerminalNode ident = ctx.Identifier();
         Token symbol = ident.getSymbol();
         int line = symbol.getLine();
@@ -71,7 +82,6 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
         localVarMap.put(text, localVar);
         irList.add("frameaddr " + size);
         irList.add("store");
-        irList.add("pop");
         return null;
     }
 
@@ -91,7 +101,6 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             }
             irList.add("frameaddr " + localVar.index);
             irList.add("store");
-            irList.add("pop");
         } else {
             visit(ctx.logical_or());
         }
@@ -361,7 +370,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
                     sb.append("\taddi sp, sp, 4\n");
                     break;
                 case "ret":
-                    sb.append("\tj ").append(funcName).append("_epilogue\n");
+                    sb.append("\tjal t1, ").append(funcName).append("_epilogue\n");
                     break;
             }
         }
@@ -395,7 +404,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
      * @param reg register need to push
      */
     private void push(String reg) {
-        sb.append("\taddi sp,sp,4\n");
+        sb.append("\taddi sp,sp,-4\n");
         sb.append("\tsw ").append(reg).append(", 0(sp)\n");
     }
 
@@ -406,7 +415,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
      */
     private void pop(String reg) {
         sb.append("\tlw ").append(reg).append(", 0(sp)\n");
-        sb.append("\taddi sp,sp,-4\n");
+        sb.append("\taddi sp,sp,4\n");
     }
 
     private static class LocalVar {
