@@ -1,23 +1,28 @@
 package minidecaf;
 
+import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.tree.TerminalNode;
+
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
 
     private final StringBuilder sb;
-    private final List<String> opList;
+    private final List<String> irList;
+    private Map<String, LocalVar> localVarMap;
 
     public MainVisitor(StringBuilder sb) {
         this.sb = sb;
-        opList = new ArrayList<>();
+        irList = new ArrayList<>();
     }
 
     @Override
     public Object visitProg(MiniDecafParser.ProgContext ctx) {
         sb.append("\t.text\n\t.globl\tmain\n");
         super.visitProg(ctx);
-        transIR();
         return null;
     }
 
@@ -28,21 +33,80 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             throw new RuntimeException("function name is not main.");
         }
         sb.append(text).append(":\n");
-        return super.visitFunc(ctx);
+        localVarMap = new HashMap<>();
+        visitChildren(ctx);
+        transIR(text);
+        return null;
     }
 
     @Override
-    public Object visitStat(MiniDecafParser.StatContext ctx) {
+    public Object visitRetStat(MiniDecafParser.RetStatContext ctx) {
         visit(ctx.expr());
-        opList.add("ret");
+        irList.add("ret");
         return null;
     }
 
     @Override
-    public Object visitExpr(MiniDecafParser.ExprContext ctx) {
-        super.visitExpr(ctx);
+    public Object visitExprStat(MiniDecafParser.ExprStatContext ctx) {
+        visitChildren(ctx);
+        irList.add("pop");
         return null;
     }
+
+    @Override
+    public Object visitDeclStat(MiniDecafParser.DeclStatContext ctx) {
+        super.visitDeclStat(ctx);
+        irList.add("pop");
+        return null;
+    }
+
+    @Override
+    public Object visitDeclaration(MiniDecafParser.DeclarationContext ctx) {
+        MiniDecafParser.ExprContext expr = ctx.expr();
+        if (expr == null) {
+            irList.add("push 0");
+        } else {
+            visit(expr);
+        }
+        TerminalNode ident = ctx.Identifier();
+        Token symbol = ident.getSymbol();
+        int line = symbol.getLine();
+        int col = symbol.getCharPositionInLine();
+        String text = ident.getText();
+        LocalVar localVar = localVarMap.get(text);
+        if (localVar != null) {
+            throw new ParserException("Declaration error: variable " + text + " has declared.", line, col);
+        }
+        int size = localVarMap.size();
+        localVar = new LocalVar(text, size, line, col);
+        localVarMap.put(text, localVar);
+        irList.add("frameaddr " + size);
+        irList.add("store");
+        return null;
+    }
+
+    @Override
+    public Object visitAssignment(MiniDecafParser.AssignmentContext ctx) {
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.expr());
+            TerminalNode identifier = ctx.Identifier();
+            String text = identifier.getText();
+            LocalVar localVar = localVarMap.get(text);
+            if (localVar == null) {
+                Token symbol = identifier.getSymbol();
+                int line = symbol.getLine();
+                int col = symbol.getCharPositionInLine();
+                throw new ParserException("Assignment error: variable " + text + " has not declared.", line, col);
+            }
+            irList.add("frameaddr " + localVar.index);
+            irList.add("store");
+        } else {
+            visit(ctx.logical_or());
+        }
+        return null;
+    }
+
 
     @Override
     public Object visitLogical_or(MiniDecafParser.Logical_orContext ctx) {
@@ -50,7 +114,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
         if (childCount > 1) {
             visit(ctx.logical_or());
             visit(ctx.logical_and());
-            opList.add("lor");
+            irList.add("lor");
         } else {
             visit(ctx.logical_and());
         }
@@ -63,7 +127,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
         if (childCount > 1) {
             visit(ctx.logical_and());
             visit(ctx.equality());
-            opList.add("land");
+            irList.add("land");
         } else {
             visit(ctx.equality());
         }
@@ -78,7 +142,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             visit(ctx.relational());
             String opText = ctx.op.getText();
             opText = "==".equals(opText) ? "eq" : "ne";
-            opList.add(opText);
+            irList.add(opText);
         } else {
             visit(ctx.relational());
         }
@@ -96,7 +160,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
                     : ">".equals(opText) ? "gt"
                     : "<=".equals(opText) ? "le"
                     : "ge";
-            opList.add(opText);
+            irList.add(opText);
         } else {
             visit(ctx.additive());
         }
@@ -111,7 +175,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             visit(ctx.multiplicative());
             String opText = ctx.op.getText();
             opText = "+".equals(opText) ? "add" : "sub";
-            opList.add(opText);
+            irList.add(opText);
         } else {
             visit(ctx.multiplicative());
         }
@@ -127,7 +191,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             String opText = ctx.op.getText();
             opText = "*".equals(opText) ? "mul" :
                     "/".equals(opText) ? "div" : "rem";
-            opList.add(opText);
+            irList.add(opText);
         } else {
             visit(ctx.unary());
         }
@@ -142,7 +206,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             String opText = ctx.op.getText();
             opText = "-".equals(opText) ? "neg" :
                     "~".equals(opText) ? "not" : "lnot";
-            opList.add(opText);
+            irList.add(opText);
         } else {
             visit(ctx.primary());
         }
@@ -150,133 +214,188 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitPrimary(MiniDecafParser.PrimaryContext ctx) {
-        int childCount = ctx.getChildCount();
-        if (childCount > 1) {
-            visit(ctx.expr());
-        } else {
-            String text = ctx.getText();
-            opList.add("push " + Integer.parseInt(text));
-        }
+    public Object visitPriConst(MiniDecafParser.PriConstContext ctx) {
+        String text = ctx.getText();
+        irList.add("push " + Integer.parseInt(text));
         return null;
     }
 
-    private void transIR() {
-        for (String opStr : opList) {
+    @Override
+    public Object visitPriIdent(MiniDecafParser.PriIdentContext ctx) {
+        TerminalNode identifier = ctx.Identifier();
+        String text = identifier.getText();
+        LocalVar localVar = localVarMap.get(text);
+        if (localVar == null) {
+            Token symbol = identifier.getSymbol();
+            int line = symbol.getLine();
+            int col = symbol.getCharPositionInLine();
+            throw new ParserException("Read error: variable " + text + " has not defined.", line, col);
+        }
+        irList.add("frameaddr " + localVar.index);
+        irList.add("load");
+        return null;
+    }
+
+    private void transIR(String funcName) {
+        prologue();
+        for (String opStr : irList) {
             String[] split = opStr.split(" ");
             String op = split[0];
+            String val;
             switch (op) {
                 case "lor":
+                    pop("t2");
                     pop("t1");
-                    pop("t0");
-                    sb.append("\tor t0,t0,t1\n")
-                            .append("\tsnez t0,t0\n");
-                    push("t0");
+                    sb.append("\tor t1,t1,t2\n")
+                            .append("\tsnez t1,t1\n");
+                    push("t1");
                     break;
                 case "land":
+                    pop("t2");
                     pop("t1");
-                    pop("t0");
-                    sb.append("\tsnez t0,t0\n")
-                            .append("\tsnez t1,t1\n")
-                            .append("\tand t0,t0,t1\n");
-                    push("t0");
+                    sb.append("\tsnez t1,t1\n")
+                            .append("\tsnez t2,t2\n")
+                            .append("\tand t1,t1,t2\n");
+                    push("t1");
                     break;
                 case "eq":
+                    pop("t2");
                     pop("t1");
-                    pop("t0");
-                    sb.append("\tsub t0,t0,t1\n")
-                            .append("\tseqz t0,t0\n");
-                    push("t0");
+                    sb.append("\tsub t1,t1,t2\n")
+                            .append("\tseqz t1,t1\n");
+                    push("t1");
                     break;
                 case "ne":
+                    pop("t2");
                     pop("t1");
-                    pop("t0");
-                    sb.append("\tsub t0,t0,t1\n")
-                            .append("\tsnez t0,t0\n");
-                    push("t0");
+                    sb.append("\tsub t1,t1,t2\n")
+                            .append("\tsnez t1,t1\n");
+                    push("t1");
                     break;
                 case "le":
+                    pop("t2");
                     pop("t1");
-                    pop("t0");
-                    sb.append("\tsgt t0,t0,t1\n")
-                            .append("\txori t0,t0,1\n");
-                    push("t0");
+                    sb.append("\tsgt t1,t1,t2\n")
+                            .append("\txori t1,t1,1\n");
+                    push("t1");
                     break;
                 case "ge":
+                    pop("t2");
                     pop("t1");
-                    pop("t0");
-                    sb.append("\tslt t0,t0,t1\n")
-                            .append("\txori t0,t0,1\n");
-                    push("t0");
+                    sb.append("\tslt t1,t1,t2\n")
+                            .append("\txori t1,t1,1\n");
+                    push("t1");
                     break;
                 case "lt":
+                    pop("t2");
                     pop("t1");
-                    pop("t0");
-                    sb.append("\tslt t0,t0,t1\n");
-                    push("t0");
+                    sb.append("\tslt t1,t1,t2\n");
+                    push("t1");
                     break;
                 case "gt":
+                    pop("t2");
                     pop("t1");
-                    pop("t0");
-                    sb.append("\tsgt t0,t0,t1\n");
-                    push("t0");
+                    sb.append("\tsgt t1,t1,t2\n");
+                    push("t1");
                     break;
                 case "neg":
-                    pop("t0");
-                    sb.append("\tneg t0,t0\n");
-                    push("t0");
+                    pop("t1");
+                    sb.append("\tneg t1,t1\n");
+                    push("t1");
                     break;
                 case "not":
-                    pop("t0");
-                    sb.append("\tnot t0,t0\n");
-                    push("t0");
+                    pop("t1");
+                    sb.append("\tnot t1,t1\n");
+                    push("t1");
                     break;
                 case "lnot":
-                    pop("t0");
-                    sb.append("\tseqz t0,t0\n");
-                    push("t0");
+                    pop("t1");
+                    sb.append("\tseqz t1,t1\n");
+                    push("t1");
                     break;
                 case "add":
-                    pop("t1"); // rvalue
-                    pop("t0"); // lvalue
-                    sb.append("\tadd t0,t0,t1\n");
-                    push("t0");
+                    pop("t2"); // rvalue
+                    pop("t1"); // lvalue
+                    sb.append("\tadd t1,t1,t2\n");
+                    push("t1");
                     break;
                 case "sub":
-                    pop("t1"); // rvalue
-                    pop("t0"); // lvalue
-                    sb.append("\tsub t0,t0,t1\n");
-                    push("t0");
+                    pop("t2"); // rvalue
+                    pop("t1"); // lvalue
+                    sb.append("\tsub t1,t1,t2\n");
+                    push("t1");
                     break;
                 case "mul":
-                    pop("t1"); // rvalue
-                    pop("t0"); // lvalue
-                    sb.append("\tmul t0,t0,t1\n");
-                    push("t0");
+                    pop("t2"); // rvalue
+                    pop("t1"); // lvalue
+                    sb.append("\tmul t1,t1,t2\n");
+                    push("t1");
                     break;
                 case "div":
-                    pop("t1"); // rvalue
-                    pop("t0"); // lvalue
-                    sb.append("\tdiv t0,t0,t1\n");
-                    push("t0");
+                    pop("t2"); // rvalue
+                    pop("t1"); // lvalue
+                    sb.append("\tdiv t1,t1,t2\n");
+                    push("t1");
                     break;
                 case "rem":
-                    pop("t1"); // rvalue
-                    pop("t0"); // lvalue
-                    sb.append("\trem t0,t0,t1\n");
-                    push("t0");
+                    pop("t2"); // rvalue
+                    pop("t1"); // lvalue
+                    sb.append("\trem t1,t1,t2\n");
+                    push("t1");
                     break;
                 case "push":
-                    String val = split[1];
-                    sb.append("\tli t0," + val + "\n");
-                    push("t0");
+                    val = split[1];
+                    sb.append("\tli t1,").append(val).append("\n");
+                    push("t1");
+                    break;
+                case "frameaddr":
+                    val = split[1];
+                    int k = Integer.parseInt(val);
+                    sb.append("\taddi sp, sp, -4\n");
+                    sb.append("\taddi t1, fp, ").append(-12-4*k).append("\n");
+                    sb.append("\tsw t1, 0(sp)\n");
+                    break;
+                case "load":
+                    sb.append("\tlw t1, 0(sp)\n");
+                    sb.append("\tlw t1, 0(t1)\n");
+                    sb.append("\tsw t1, 0(sp)\n");
+                    break;
+                case "store":
+                    sb.append("\tlw t1, 4(sp)\n");
+                    sb.append("\tlw t2, 0(sp)\n");
+                    sb.append("\taddi sp, sp, 4\n");
+                    sb.append("\tsw t1, 0(t2)\n");
+                    break;
+                case "pop":
+                    sb.append("\taddi sp, sp, 4\n");
                     break;
                 case "ret":
-                    pop("a0");
-                    sb.append("\tret\n");
+                    sb.append("\tjal t1, ").append(funcName).append("_epilogue\n");
                     break;
             }
         }
+        epilogue(funcName);
+    }
+
+    private void prologue() {
+        int frameSize = 8 + 4 * localVarMap.size();
+        sb.append("\taddi sp, sp, ").append(-frameSize).append("\n");
+        sb.append("\tsw ra, ").append(frameSize-4).append("(sp)").append("\n");
+        sb.append("\tsw fp, ").append(frameSize-8).append("(sp)").append("\n");
+        sb.append("\taddi fp, sp, ").append(frameSize).append("\n");
+
+    }
+
+    private void epilogue(String funcName) {
+        int frameSize = 8 + 4 * localVarMap.size();
+        sb.append(funcName).append("_epilogue:\n");
+        sb.append("\tlw a0, 0(sp)\n");
+        sb.append("\taddi sp, sp, 4\n");
+        sb.append("\tlw fp, ").append(frameSize-8).append("(sp)").append("\n");
+        sb.append("\tlw ra, ").append(frameSize-4).append("(sp)").append("\n");
+        sb.append("\taddi sp, sp, ").append(frameSize).append("\n");
+        sb.append("\tjr ra\n");
+
     }
 
     /**
@@ -285,8 +404,8 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
      * @param reg register need to push
      */
     private void push(String reg) {
-        sb.append("\taddi sp,sp,4\n")
-                .append("\tsw " + reg + ", 0(sp)\n");
+        sb.append("\taddi sp,sp,-4\n");
+        sb.append("\tsw ").append(reg).append(", 0(sp)\n");
     }
 
     /**
@@ -295,7 +414,23 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
      * @param reg register pop to
      */
     private void pop(String reg) {
-        sb.append("\tlw " + reg + ", 0(sp)\n")
-                .append("\taddi sp,sp,-4\n");
+        sb.append("\tlw ").append(reg).append(", 0(sp)\n");
+        sb.append("\taddi sp,sp,4\n");
+    }
+
+    private static class LocalVar {
+        private final String name;
+        private final String type;
+        private final int index;
+        private final int line;
+        private final int col;
+
+        public LocalVar(String name, int index, int line, int col) {
+            this.name = name;
+            this.index = index;
+            this.line = line;
+            this.col = col;
+            type = "int";
+        }
     }
 }
