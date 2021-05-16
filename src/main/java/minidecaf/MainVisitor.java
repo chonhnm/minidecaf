@@ -238,6 +238,8 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
 
     private void transIR(String funcName) {
         prologue();
+        // if no ret, then return 0
+        irList.add("push 0");
         for (String opStr : irList) {
             String[] split = opStr.split(" ");
             String op = split[0];
