@@ -2,12 +2,26 @@ grammar MiniDecaf;
 
 prog : func EOF;
 
-func : type ident=Identifier Lparen Rparen Lbrace stat* Rbrace;
+func : type ident=Identifier Lparen Rparen Lbrace block_item* Rbrace;
+
+block_item
+    : stat
+    | declaration
+    ;
 
 stat
     : Return expr Semicolon #retStat
     | expr? ';'             #exprStat
-    | declaration           #declStat
+    | ifState                #ifStat
+    ;
+
+ifState
+    : ifWithoutElse
+    | ifWithoutElse 'else' stat
+    ;
+
+ifWithoutElse
+    : 'if' '(' expr ')' stat
     ;
 
 declaration
@@ -19,9 +33,13 @@ expr
     ;
 
 assignment
-    : logical_or
+    : conditional
     | Identifier '=' expr
     ;
+
+conditional
+    : logical_or
+    | logical_or? '?' expr ':' conditional;
 
 logical_or
     : logical_and
