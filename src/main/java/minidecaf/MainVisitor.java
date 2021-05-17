@@ -1,6 +1,7 @@
 package minidecaf;
 
 import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
 
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
     private final StringBuilder sb;
     private final List<String> irList;
     private Map<String, LocalVar> localVarMap;
+    private int ifLabelIndex;
 
     public MainVisitor(StringBuilder sb) {
         this.sb = sb;
@@ -34,6 +36,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
         }
         sb.append(text).append(":\n");
         localVarMap = new HashMap<>();
+        ifLabelIndex = 0;
         visitChildren(ctx);
         transIR(text);
         return null;
@@ -54,9 +57,26 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitDeclStat(MiniDecafParser.DeclStatContext ctx) {
-        super.visitDeclStat(ctx);
-        irList.add("pop");
+    public Object visitIfState(MiniDecafParser.IfStateContext ctx) {
+        int childCount = ctx.getChildCount();
+        int idx = ifLabelIndex++;
+        if (childCount > 1) {
+            MiniDecafParser.IfWithoutElseContext thenChild = ctx.ifWithoutElse();
+            MiniDecafParser.StatContext elseChild = ctx.stat();
+            visit(thenChild.expr());
+            irList.add("beqz ELSE_LABEL" + idx);
+            visit(thenChild.stat());
+            irList.add("br END_LABEL" + idx);
+            irList.add("label ELSE_LABEL" + idx);
+            visit(elseChild);
+            irList.add("label END_LABEL" + idx);
+        } else {
+            MiniDecafParser.IfWithoutElseContext child = ctx.ifWithoutElse();
+            visit(child.expr());
+            irList.add("beqz END_LABEL" + idx);
+            visit(child.stat());
+            irList.add("label END_LABEL" + idx);
+        }
         return null;
     }
 
@@ -82,6 +102,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
         localVarMap.put(text, localVar);
         irList.add("frameaddr " + size);
         irList.add("store");
+        irList.add("pop");
         return null;
     }
 
@@ -102,11 +123,28 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             irList.add("frameaddr " + localVar.index);
             irList.add("store");
         } else {
-            visit(ctx.logical_or());
+            visit(ctx.conditional());
         }
         return null;
     }
 
+    @Override
+    public Object visitConditional(MiniDecafParser.ConditionalContext ctx) {
+        int idx = ifLabelIndex++;
+        int childCount = ctx.getChildCount();
+        if (childCount > 1) {
+            visit(ctx.logical_or());
+            irList.add("beqz ELSE_LABEL" + idx);
+            visit(ctx.expr());
+            irList.add("br END_LABEL" + idx);
+            irList.add("label ELSE_LABEL" + idx);
+            visit(ctx.conditional());
+            irList.add("label END_LABEL" + idx);
+        } else {
+            visit(ctx.logical_or());
+        }
+        return null;
+    }
 
     @Override
     public Object visitLogical_or(MiniDecafParser.Logical_orContext ctx) {
@@ -373,6 +411,26 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
                     break;
                 case "ret":
                     sb.append("\tjal t1, ").append(funcName).append("_epilogue\n");
+                    break;
+                case "label":
+                    val = split[1];
+                    sb.append("\t").append(val).append(":\n");
+                    break;
+                case "beqz":
+                    val = split[1];
+                    sb.append("\tlw t1, 0(sp)\n");
+                    sb.append("\taddi sp, sp, 4\n");
+                    sb.append("\tbeqz t1, ").append(val).append("\n");
+                    break;
+                case "bnez":
+                    val = split[1];
+                    sb.append("\tlw t1, 0(sp)\n");
+                    sb.append("\taddi sp, sp, 4\n");
+                    sb.append("\tbnez t1, ").append(val).append("\n");
+                    break;
+                case "br":
+                    val = split[1];
+                    sb.append("\tj ").append(val).append("\n");
                     break;
             }
         }
