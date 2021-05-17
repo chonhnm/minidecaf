@@ -21,14 +21,8 @@ main:
 	sw t1, 0(sp)
 	lw t1, 0(sp)
 	addi sp, sp, 4
-	beqz t1, END_LABEL1
-	li t1,2
-	addi sp,sp,-4
-	sw t1, 0(sp)
-	lw t1, 0(sp)
-	addi sp, sp, 4
-	beqz t1, ELSE_LABEL3
-	li t1,3
+	beqz t1, END_LABEL0
+	li t1,1
 	addi sp,sp,-4
 	sw t1, 0(sp)
 	addi sp, sp, -4
@@ -39,21 +33,7 @@ main:
 	addi sp, sp, 4
 	sw t1, 0(t2)
 	addi sp, sp, 4
-	j END_LABEL3
-	ELSE_LABEL3:
-	li t1,4
-	addi sp,sp,-4
-	sw t1, 0(sp)
-	addi sp, sp, -4
-	addi t1, fp, -12
-	sw t1, 0(sp)
-	lw t1, 4(sp)
-	lw t2, 0(sp)
-	addi sp, sp, 4
-	sw t1, 0(t2)
-	addi sp, sp, 4
-	END_LABEL3:
-	END_LABEL1:
+	END_LABEL0:
 	addi sp, sp, -4
 	addi t1, fp, -12
 	sw t1, 0(sp)

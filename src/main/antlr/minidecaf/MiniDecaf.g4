@@ -2,7 +2,13 @@ grammar MiniDecaf;
 
 prog : func EOF;
 
-func : type ident=Identifier Lparen Rparen Lbrace block_item* Rbrace;
+func
+    : type ident=Identifier '(' ')' compound_statement
+    ;
+
+compound_statement
+    : '{' block_item* '}'
+    ;
 
 block_item
     : stat
@@ -10,9 +16,10 @@ block_item
     ;
 
 stat
-    : Return expr Semicolon #retStat
-    | expr? ';'             #exprStat
+    : Return expr ';'  #retStat
+    | expr? ';'              #exprStat
     | ifState                #ifStat
+    | compound_statement     #comStat
     ;
 
 ifState
