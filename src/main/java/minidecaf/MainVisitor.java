@@ -1,20 +1,17 @@
 package minidecaf;
 
 import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
 
     private final StringBuilder sb;
     private final List<String> irList;
-    private Map<String, LocalVar> localVarMap;
     private int ifLabelIndex;
+    private Stack<Map<String, LocalVar>> stack;
+    private int maxLocalVarCnt;
 
     public MainVisitor(StringBuilder sb) {
         this.sb = sb;
@@ -35,10 +32,22 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             throw new RuntimeException("function name is not main.");
         }
         sb.append(text).append(":\n");
-        localVarMap = new HashMap<>();
+        stack = new Stack<>();
+        maxLocalVarCnt = 0;
         ifLabelIndex = 0;
         visitChildren(ctx);
         transIR(text);
+        return null;
+    }
+
+    @Override
+    public Object visitCompound_statement(MiniDecafParser.Compound_statementContext ctx) {
+        stack.push(new HashMap<>());
+        List<MiniDecafParser.Block_itemContext> block_itemContexts = ctx.block_item();
+        for (MiniDecafParser.Block_itemContext item : block_itemContexts) {
+            visit(item);
+        }
+        stack.pop();
         return null;
     }
 
@@ -93,11 +102,13 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
         int line = symbol.getLine();
         int col = symbol.getCharPositionInLine();
         String text = ident.getText();
+        Map<String, LocalVar> localVarMap = stack.peek();
         LocalVar localVar = localVarMap.get(text);
         if (localVar != null) {
             throw new ParserException("Declaration error: variable " + text + " has declared.", line, col);
         }
-        int size = localVarMap.size();
+        int size = stack.stream().map(Map::size).reduce(0, Integer::sum);
+        maxLocalVarCnt = Math.max(size + 1, maxLocalVarCnt);
         localVar = new LocalVar(text, size, line, col);
         localVarMap.put(text, localVar);
         irList.add("frameaddr " + size);
@@ -113,7 +124,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             visit(ctx.expr());
             TerminalNode identifier = ctx.Identifier();
             String text = identifier.getText();
-            LocalVar localVar = localVarMap.get(text);
+            LocalVar localVar = getLocalVar(text);
             if (localVar == null) {
                 Token symbol = identifier.getSymbol();
                 int line = symbol.getLine();
@@ -126,6 +137,17 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
             visit(ctx.conditional());
         }
         return null;
+    }
+
+    private LocalVar getLocalVar(String text) {
+        LocalVar localVar = null;
+        for (int i = stack.size() - 1; i >= 0 ; i--) {
+            Map<String, LocalVar> localVarMap = stack.get(i);
+            if ((localVar = localVarMap.get(text)) != null) {
+                break;
+            }
+        }
+        return localVar;
     }
 
     @Override
@@ -262,7 +284,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
     public Object visitPriIdent(MiniDecafParser.PriIdentContext ctx) {
         TerminalNode identifier = ctx.Identifier();
         String text = identifier.getText();
-        LocalVar localVar = localVarMap.get(text);
+        LocalVar localVar = getLocalVar(text);
         if (localVar == null) {
             Token symbol = identifier.getSymbol();
             int line = symbol.getLine();
@@ -438,7 +460,7 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
     }
 
     private void prologue() {
-        int frameSize = 8 + 4 * localVarMap.size();
+        int frameSize = 8 + 4 * maxLocalVarCnt;
         sb.append("\taddi sp, sp, ").append(-frameSize).append("\n");
         sb.append("\tsw ra, ").append(frameSize-4).append("(sp)").append("\n");
         sb.append("\tsw fp, ").append(frameSize-8).append("(sp)").append("\n");
@@ -447,8 +469,8 @@ public final class MainVisitor extends MiniDecafBaseVisitor<Object> {
     }
 
     private void epilogue(String funcName) {
-        int frameSize = 8 + 4 * localVarMap.size();
-        sb.append(funcName).append("_epilogue:\n");
+        int frameSize = 8 + 4 * maxLocalVarCnt;
+        sb.append("\t").append(funcName).append("_epilogue:\n");
         sb.append("\tlw a0, 0(sp)\n");
         sb.append("\taddi sp, sp, 4\n");
         sb.append("\tlw fp, ").append(frameSize-8).append("(sp)").append("\n");
